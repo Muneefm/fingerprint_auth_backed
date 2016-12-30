@@ -18,6 +18,7 @@ class CreateUsersTable extends Migration {
 			$table->string('name')->default(' ')->nullable();
             $table->string('otp')->nullable();
             $table->string('emi')->nullable();
+            $table->string('otptime')->nullable();
 
             $table->string('image')->nullable();
 

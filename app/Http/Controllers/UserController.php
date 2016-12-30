@@ -94,6 +94,19 @@ if( $this->checkUserLogin()){
 
             ])
             ) {
+
+                $date = new \DateTime();
+                $to_time = strtotime($date->format('Y-m-d H:i:s'));
+                $from_time = strtotime(Auth::user()->otptime);
+                $diff = round(abs($to_time - $from_time),2);
+                if($diff>30){
+                    Auth::logout();
+                    $err1 = new MessageBag(['i' => ['OTP Expired!']]);
+                    return Redirect('user_login')->withErrors($err1);
+                }else{
+                    DB::table('users')->where('id',Auth::user()->id)->update(['otp'=>'','otptime'=>'']);
+                }
+
                 return redirect('user_dash');
 
                 /*
@@ -108,7 +121,7 @@ if( $this->checkUserLogin()){
                 //return 'succes';
 
             } else {
-                $err = new MessageBag(['i' => ['Invaid Username or Password']]);
+                $err = new MessageBag(['i' => ['Invaid Username , Password , OTP']]);
 
                 return Redirect::back()->withErrors($err);
 

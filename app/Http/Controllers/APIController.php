@@ -35,7 +35,8 @@ class APIController extends Controller
             $message = "EMI exist";
             $status =1;
             $otp =rand(1000,9999);
-            DB::table('users')->where('emi', $emi)->update(['otp'=>$otp]);
+            $date = new \DateTime();
+            DB::table('users')->where('emi', $emi)->update(['otp'=>$otp,'otptime'=>$date]);
         }else{
             $isuserexist =0;
             $message = "EMI does not exist";
@@ -69,7 +70,8 @@ class APIController extends Controller
                 $otp =rand(1000,9999);
 
             DB::table('users')->where('username',$username)->update(['emi'=>$emi]);
-                DB::table('users')->where('emi', $emi)->update(['otp'=>$otp]);
+                $date = new \DateTime();
+                DB::table('users')->where('emi', $emi)->update(['otp'=>$otp,'otptime'=>$date]);
 
                 $msg = 'Success';
 
@@ -87,7 +89,7 @@ class APIController extends Controller
         $status =0;
         $msg="null values";
         if ($emi!=null){
-            DB::table('users')->where('emi', $emi)->update(['otp'=>'','emi'=>'']);
+            DB::table('users')->where('emi', $emi)->update(['otp'=>'','emi'=>'','otptime'=>'']);
             $status =1;
             $msg ="Device revoked";
         }
