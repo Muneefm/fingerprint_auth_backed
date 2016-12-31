@@ -80,7 +80,7 @@ if( $this->checkUserLogin()){
             $erOtp = $messages->first('fotp');
 
             // dd($validator);
-            return view('admin.adminlogin')->withErrors($validator);
+            return view('user.login')->withErrors($validator);
             // The given data did not pass validation
         } else {
 

@@ -2,25 +2,84 @@
 
 namespace League\Flysystem\Adapter;
 
+use DateTime;
 use League\Flysystem\AdapterInterface;
 use League\Flysystem\Config;
-use Net_SFTP;
+use League\Flysystem\NotSupportedException;
+use League\Flysystem\SafeStorage;
+use RuntimeException;
 
 abstract class AbstractFtpAdapter extends AbstractAdapter
 {
+    /**
+     * @var mixed
+     */
     protected $connection;
+
+    /**
+     * @var string
+     */
     protected $host;
+
+    /**
+     * @var int
+     */
     protected $port = 21;
-    protected $username;
-    protected $password;
+
+    /**
+     * @var bool
+     */
     protected $ssl = false;
+
+    /**
+     * @var int
+     */
     protected $timeout = 90;
+
+    /**
+     * @var bool
+     */
     protected $passive = true;
+
+    /**
+     * @var string
+     */
     protected $separator = '/';
+
+    /**
+     * @var string|null
+     */
     protected $root;
+
+    /**
+     * @var int
+     */
     protected $permPublic = 0744;
+
+    /**
+     * @var int
+     */
     protected $permPrivate = 0700;
+
+    /**
+     * @var array
+     */
     protected $configurable = [];
+
+    /**
+     * @var string
+     */
+    protected $systemType;
+
+    /**
+     * @var bool
+     */
+    protected $alternativeRecursion = false;
+
+    /**
+     * @var SafeStorage
+     */
+    protected $safeStorage;
 
     /**
      * Constructor.
@@ -29,6 +88,7 @@ abstract class AbstractFtpAdapter extends AbstractAdapter
      */
     public function __construct(array $config)
     {
+        $this->safeStorage = new SafeStorage();
         $this->setConfig($config);
     }
 
@@ -42,10 +102,15 @@ abstract class AbstractFtpAdapter extends AbstractAdapter
     public function setConfig(array $config)
     {
         foreach ($this->configurable as $setting) {
-            if (! isset($config[$setting])) {
+            if ( ! isset($config[$setting])) {
                 continue;
             }
-            $this->{'set'.ucfirst($setting)}($config[$setting]);
+
+            $method = 'set' . ucfirst($setting);
+
+            if (method_exists($this, $method)) {
+                $this->$method($config[$setting]);
+            }
         }
 
         return $this;
@@ -146,7 +211,7 @@ abstract class AbstractFtpAdapter extends AbstractAdapter
      */
     public function setRoot($root)
     {
-        $this->root = rtrim($root, '\\/').$this->separator;
+        $this->root = rtrim($root, '\\/') . $this->separator;
 
         return $this;
     }
@@ -158,7 +223,7 @@ abstract class AbstractFtpAdapter extends AbstractAdapter
      */
     public function getUsername()
     {
-        return empty($this->username) ? 'anonymous' : $this->username;
+        return $this->safeStorage->retrieveSafely('username') ?: 'anonymous';
     }
 
     /**
@@ -170,7 +235,7 @@ abstract class AbstractFtpAdapter extends AbstractAdapter
      */
     public function setUsername($username)
     {
-        $this->username = $username;
+        $this->safeStorage->storeSafely('username', $username);
 
         return $this;
     }
@@ -182,7 +247,7 @@ abstract class AbstractFtpAdapter extends AbstractAdapter
      */
     public function getPassword()
     {
-        return $this->password;
+        return $this->safeStorage->retrieveSafely('password');
     }
 
     /**
@@ -194,7 +259,7 @@ abstract class AbstractFtpAdapter extends AbstractAdapter
      */
     public function setPassword($password)
     {
-        $this->password = $password;
+        $this->safeStorage->storeSafely('password', $password);
 
         return $this;
     }
@@ -224,12 +289,38 @@ abstract class AbstractFtpAdapter extends AbstractAdapter
     }
 
     /**
-     * {@inheritdoc}
+     * Return the FTP system type.
+     *
+     * @return string
+     */
+    public function getSystemType()
+    {
+        return $this->systemType;
+    }
+
+    /**
+     * Set the FTP system type (windows or unix).
+     *
+     * @param string $systemType
+     *
+     * @return $this
+     */
+    public function setSystemType($systemType)
+    {
+        $this->systemType = strtolower($systemType);
+
+        return $this;
+    }
+
+    /**
+     * @inheritdoc
      */
     public function listContents($directory = '', $recursive = false)
     {
         return $this->listDirectoryContents($directory, $recursive);
     }
+
+    abstract protected function listDirectoryContents($directory, $recursive = false);
 
     /**
      * Normalize a directory listing.
@@ -282,13 +373,41 @@ abstract class AbstractFtpAdapter extends AbstractAdapter
      * @param string $base
      *
      * @return array normalized file array
+     *
+     * @throws NotSupportedException
      */
     protected function normalizeObject($item, $base)
     {
-        $item = preg_replace('#\s+#', ' ', trim($item));
+        $systemType = $this->systemType ?: $this->detectSystemType($item);
+
+        if ($systemType === 'unix') {
+            return $this->normalizeUnixObject($item, $base);
+        } elseif ($systemType === 'windows') {
+            return $this->normalizeWindowsObject($item, $base);
+        }
+
+        throw NotSupportedException::forFtpSystemType($systemType);
+    }
+
+    /**
+     * Normalize a Unix file entry.
+     *
+     * @param string $item
+     * @param string $base
+     *
+     * @return array normalized file array
+     */
+    protected function normalizeUnixObject($item, $base)
+    {
+        $item = preg_replace('#\s+#', ' ', trim($item), 7);
+
+        if (count(explode(' ', $item, 9)) !== 9) {
+            throw new RuntimeException("Metadata can't be parsed from item '$item' , not enough parts.");
+        }
+
         list($permissions, /* $number */, /* $owner */, /* $group */, $size, /* $month */, /* $day */, /* $time*/, $name) = explode(' ', $item, 9);
         $type = $this->detectType($permissions);
-        $path = empty($base) ? $name : $base.$this->separator.$name;
+        $path = empty($base) ? $name : $base . $this->separator . $name;
 
         if ($type === 'dir') {
             return compact('type', 'path');
@@ -299,6 +418,55 @@ abstract class AbstractFtpAdapter extends AbstractAdapter
         $size = (int) $size;
 
         return compact('type', 'path', 'visibility', 'size');
+    }
+
+    /**
+     * Normalize a Windows/DOS file entry.
+     *
+     * @param string $item
+     * @param string $base
+     *
+     * @return array normalized file array
+     */
+    protected function normalizeWindowsObject($item, $base)
+    {
+        $item = preg_replace('#\s+#', ' ', trim($item), 3);
+
+        if (count(explode(' ', $item, 4)) !== 4) {
+            throw new RuntimeException("Metadata can't be parsed from item '$item' , not enough parts.");
+        }
+
+        list($date, $time, $size, $name) = explode(' ', $item, 4);
+        $path = empty($base) ? $name : $base . $this->separator . $name;
+
+        // Check for the correct date/time format
+        $format = strlen($date) === 8 ? 'm-d-yH:iA' : 'Y-m-dH:i';
+        $dt = DateTime::createFromFormat($format, $date . $time);
+        $timestamp = $dt ? $dt->getTimestamp() : (int) strtotime("$date $time");
+
+        if ($size === '<DIR>') {
+            $type = 'dir';
+
+            return compact('type', 'path', 'timestamp');
+        }
+
+        $type = 'file';
+        $visibility = AdapterInterface::VISIBILITY_PUBLIC;
+        $size = (int) $size;
+
+        return compact('type', 'path', 'visibility', 'size', 'timestamp');
+    }
+
+    /**
+     * Get the system type from a listing item.
+     *
+     * @param string $item
+     *
+     * @return string the system type
+     */
+    protected function detectSystemType($item)
+    {
+        return preg_match('/^[0-9]{2,4}-[0-9]{2}-[0-9]{2}/', $item) ? 'windows' : 'unix';
     }
 
     /**
@@ -351,7 +519,7 @@ abstract class AbstractFtpAdapter extends AbstractAdapter
     public function removeDotDirectories(array $list)
     {
         $filter = function ($line) {
-            if (! empty($line) && ! preg_match('#.* \.(\.)?$|^total#', $line)) {
+            if ( ! empty($line) && ! preg_match('#.* \.(\.)?$|^total#', $line)) {
                 return true;
             }
 
@@ -362,7 +530,7 @@ abstract class AbstractFtpAdapter extends AbstractAdapter
     }
 
     /**
-     * {@inheritdoc}
+     * @inheritdoc
      */
     public function has($path)
     {
@@ -370,7 +538,7 @@ abstract class AbstractFtpAdapter extends AbstractAdapter
     }
 
     /**
-     * {@inheritdoc}
+     * @inheritdoc
      */
     public function getSize($path)
     {
@@ -378,17 +546,7 @@ abstract class AbstractFtpAdapter extends AbstractAdapter
     }
 
     /**
-     * {@inheritdoc}
-     */
-    public function getTimestamp($path)
-    {
-        $timestamp = ftp_mdtm($this->getConnection(), $path);
-
-        return ($timestamp !== -1) ? ['timestamp' => $timestamp] : false;
-    }
-
-    /**
-     * {@inheritdoc}
+     * @inheritdoc
      */
     public function getVisibility($path)
     {
@@ -402,17 +560,18 @@ abstract class AbstractFtpAdapter extends AbstractAdapter
      */
     public function ensureDirectory($dirname)
     {
-        if (! empty($dirname) && ! $this->has($dirname)) {
+        if ( ! empty($dirname) && ! $this->has($dirname)) {
             $this->createDir($dirname, new Config());
         }
     }
 
     /**
-     * @return resource|Net_SFTP
+     * @return mixed
      */
     public function getConnection()
     {
-        if (! $this->connection) {
+        if ( ! $this->isConnected()) {
+            $this->disconnect();
             $this->connect();
         }
 
@@ -456,4 +615,11 @@ abstract class AbstractFtpAdapter extends AbstractAdapter
      * Close the connection.
      */
     abstract public function disconnect();
+
+    /**
+     * Check if a connection is active.
+     *
+     * @return bool
+     */
+    abstract public function isConnected();
 }

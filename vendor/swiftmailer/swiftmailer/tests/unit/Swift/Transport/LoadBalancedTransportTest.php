@@ -682,7 +682,7 @@ class Swift_Transport_LoadBalancedTransportTest extends \SwiftMailerTestCase
         $t1->shouldReceive('send')
            ->once()
            ->with($message, \Mockery::on(function (&$var) use (&$failures, $testCase) {
-                return $testCase->varsAreReferences($var, $failures);
+               return $testCase->varsAreReferences($var, $failures);
            }))
            ->andReturnUsing(function () use (&$connectionState) {
                if ($connectionState) {
@@ -714,7 +714,7 @@ class Swift_Transport_LoadBalancedTransportTest extends \SwiftMailerTestCase
     }
 
     /**
-     * Adapted from Yay_Matchers_ReferenceMatcher
+     * Adapted from Yay_Matchers_ReferenceMatcher.
      */
     public function varsAreReferences(&$ref1, &$ref2)
     {
@@ -747,10 +747,5 @@ class Swift_Transport_LoadBalancedTransportTest extends \SwiftMailerTestCase
     private function _createPlugin()
     {
         return $this->getMockery('Swift_Events_EventListener');
-    }
-
-    private function _createInnerTransport()
-    {
-        return $this->getMockery('Swift_Transport');
     }
 }

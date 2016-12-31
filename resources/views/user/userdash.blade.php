@@ -32,14 +32,7 @@ $iid = \Illuminate\Support\Facades\Auth::user()->id;
                                                     <th width="50">id</th>
                                                     <th width="100">Name</th>
                                                     <th width="100">Number</th>
-                                                    <th width="100">Leave Type</th>
-                                                    <th width="100">Reason</th>
-                                                    <th width="100">Start Date</th>
-                                                    <th width="100">End Date</th>
-                                                    <th width="100">Total Days</th>
-                                                    <th width="100">Status</th>
-                                                    <th width="100">Reason</th>
-                                                    <th width="100">Action</th>
+
 
                                                 </tr>
                                             </thead>
